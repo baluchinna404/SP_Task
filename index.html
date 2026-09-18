@@ -24,6 +24,7 @@
             --accent-red: #dc2626;
             --accent-light-red: #fee2e2;
             --accent-purple: #9333ea;
+            --accent-light-purple: #f3e8ff;
             --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
             --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
         }
@@ -281,7 +282,7 @@
     // -------------------------------------------------------------
     // REPLACE WITH YOUR SUPABASE PROJECT CREDENTIALS FROM STEP 1
     // -------------------------------------------------------------
-    const SUPABASE_URL = "https://txrkkqcnofobcprftzuc.supabase.co/rest/v1/";
+    const SUPABASE_URL = "https://txrkkqcnofobcprftzuc.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4cmtrcWNub2ZvYmNwcmZ0enVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NTg2MDEsImV4cCI6MjEwNTMzNDYwMX0.yqkV64FwroHOaucpj2sIPPaeAAF1KulFhUEYAQ1SqYo";
 
     let supabase = null;
@@ -300,9 +301,14 @@
 
     let teamRoster = ["Resource 1", "Resource 2", "Resource 3", "Resource 4", "Resource 5", "Resource 6", "Resource 7"];
     let selectedDate = new Date().toISOString().split('T')[0];
-    let currentDateConfig = null;
-    let isConfigExpanded = false;
+    let currentDateConfig = {
+        date_key: selectedDate,
+        shift_assignments: ["Resource 1", "Resource 2", "Resource 3", "Resource 4", "Resource 5"],
+        statuses: Array(9).fill("Pending"),
+        notes: Array(9).fill("")
+    };
 
+    let isConfigExpanded = false;
     function toggleConfigPanel() {
         isConfigExpanded = !isConfigExpanded;
         const body = document.getElementById('config-content-body');
@@ -324,25 +330,28 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('select-date').value = selectedDate;
+        
+        // Render default fallback state immediately
+        renderDashboard();
+        updateClock();
+        setInterval(updateClock, 1000);
+
+        // Connect Supabase asynchronously
         try {
-            if (typeof window.supabase === 'undefined') {
-                alert("Error: Supabase JS library failed to load. Check internet connection.");
-                return;
+            if (window.supabase) {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                initSupabase();
+            } else {
+                console.warn("Supabase library not loaded. Running in local fallback mode.");
             }
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            document.getElementById('select-date').value = selectedDate;
-            initSupabase();
-            setInterval(updateClock, 60000);
-            updateClock();
         } catch (err) {
-            console.error("Initialization failure:", err);
-            document.getElementById('sync-status').innerText = "Sync Failed";
-            document.getElementById('sync-status').style.background = "#fee2e2";
-            document.getElementById('sync-status').style.color = "#dc2626";
+            console.error("Supabase init error:", err);
         }
     });
 
     async function initSupabase() {
+        if (!supabase) return;
         try {
             await fetchRoster();
             await fetchDateConfig(selectedDate);
@@ -350,40 +359,45 @@
             document.getElementById('sync-status').innerHTML = `<i class="fa-solid fa-cloud"></i> Supabase Live`;
         } catch (err) {
             console.error("Database connection error:", err);
-            document.getElementById('sync-status').innerText = "DB Error";
-            document.getElementById('sync-status').style.background = "#fee2e2";
-            document.getElementById('sync-status').style.color = "#dc2626";
+            document.getElementById('sync-status').innerText = "Sync Warning";
         }
     }
 
     async function fetchRoster() {
-        const { data, error } = await supabase.from('team_roster').select('*').eq('id', 1).maybeSingle();
-        if (error) console.error("Roster error:", error);
-        if (data && data.names) {
-            teamRoster = data.names;
-        } else {
-            await supabase.from('team_roster').upsert({ id: 1, names: teamRoster });
+        try {
+            const { data, error } = await supabase.from('team_roster').select('*').eq('id', 1).maybeSingle();
+            if (data && data.names) {
+                teamRoster = data.names;
+            } else if (!error) {
+                await supabase.from('team_roster').upsert({ id: 1, names: teamRoster });
+            }
+        } catch (e) {
+            console.error("fetchRoster error:", e);
         }
     }
 
     async function fetchDateConfig(dateStr) {
-        const { data, error } = await supabase.from('tracker_configs').select('*').eq('date_key', dateStr).maybeSingle();
-        if (error) console.error("Config fetch error:", error);
-        if (data) {
-            currentDateConfig = data;
-        } else {
-            currentDateConfig = {
-                date_key: dateStr,
-                shift_assignments: [teamRoster[0], teamRoster[1], teamRoster[2], teamRoster[3], teamRoster[4]],
-                statuses: Array(9).fill("Pending"),
-                notes: Array(9).fill("")
-            };
-            await supabase.from('tracker_configs').upsert(currentDateConfig);
+        try {
+            const { data, error } = await supabase.from('tracker_configs').select('*').eq('date_key', dateStr).maybeSingle();
+            if (data) {
+                currentDateConfig = data;
+            } else if (!error) {
+                currentDateConfig = {
+                    date_key: dateStr,
+                    shift_assignments: [teamRoster[0], teamRoster[1], teamRoster[2], teamRoster[3], teamRoster[4]],
+                    statuses: Array(9).fill("Pending"),
+                    notes: Array(9).fill("")
+                };
+                await supabase.from('tracker_configs').upsert(currentDateConfig);
+            }
+            renderDashboard();
+        } catch (e) {
+            console.error("fetchDateConfig error:", e);
         }
-        renderDashboard();
     }
 
     function subscribeRealtime() {
+        if (!supabase) return;
         supabase.channel('public-tracker-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tracker_configs' }, payload => {
                 if (payload.new && payload.new.date_key === selectedDate) {
@@ -402,6 +416,7 @@
 
     function renderRosterFields() {
         const container = document.getElementById('roster-inputs-container');
+        if (!container) return;
         container.innerHTML = '';
         teamRoster.forEach((name, i) => {
             const div = document.createElement('div');
@@ -417,7 +432,9 @@
     async function onRosterNameChange(index, newName) {
         if (!newName.trim()) return;
         teamRoster[index] = newName.trim();
-        await supabase.from('team_roster').upsert({ id: 1, names: teamRoster });
+        if (supabase) {
+            await supabase.from('team_roster').upsert({ id: 1, names: teamRoster });
+        }
         populateShiftDropdowns();
     }
 
@@ -425,6 +442,7 @@
         if (!currentDateConfig) return;
         for (let s = 0; s < 5; s++) {
             const select = document.getElementById(`shift-slot-${s}`);
+            if (!select) continue;
             const currentSelected = currentDateConfig.shift_assignments[s];
             select.innerHTML = teamRoster.map(r => 
                 `<option value="${r}" ${r === currentSelected ? 'selected' : ''}>${r}</option>`
@@ -435,15 +453,22 @@
     async function saveShiftAssignments() {
         if (!currentDateConfig) return;
         for (let s = 0; s < 5; s++) {
-            currentDateConfig.shift_assignments[s] = document.getElementById(`shift-slot-${s}`).value;
+            const select = document.getElementById(`shift-slot-${s}`);
+            if (select) currentDateConfig.shift_assignments[s] = select.value;
         }
-        await supabase.from('tracker_configs').upsert(currentDateConfig);
+        if (supabase) {
+            await supabase.from('tracker_configs').upsert(currentDateConfig);
+        }
         renderDashboard();
     }
 
     function onDateChange(newDate) {
         selectedDate = newDate;
-        fetchDateConfig(selectedDate);
+        if (supabase) {
+            fetchDateConfig(selectedDate);
+        } else {
+            renderDashboard();
+        }
     }
 
     function getCSTDateDetails() {
@@ -470,6 +495,7 @@
         const { cstDateStr, cstHour } = getCSTDateDetails();
 
         const tbody = document.getElementById('schedule-body');
+        if (!tbody) return;
         tbody.innerHTML = '';
 
         let passCount = 0, failCount = 0, pendingCount = 0;
@@ -519,6 +545,8 @@
         document.getElementById('kpi-pending').innerText = pendingCount;
 
         const summaryBody = document.getElementById('summary-body');
+        if (!summaryBody) return;
+
         const roles = [
             "Morning Lead (4 AM - 12 PM)",
             "Morning Support (4 AM - 12 PM)",
@@ -542,20 +570,23 @@
 
     async function updateTaskStatus(index, val) {
         currentDateConfig.statuses[index] = val;
-        await supabase.from('tracker_configs').upsert(currentDateConfig);
+        if (supabase) {
+            await supabase.from('tracker_configs').upsert(currentDateConfig);
+        }
         renderDashboard();
     }
 
     async function updateTaskNote(index, val) {
         currentDateConfig.notes[index] = val;
-        await supabase.from('tracker_configs').upsert(currentDateConfig);
+        if (supabase) {
+            await supabase.from('tracker_configs').upsert(currentDateConfig);
+        }
     }
 
     function updateClock() {
         const options = { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
         const cstTime = new Intl.DateTimeFormat('en-US', options).format(new Date());
         document.getElementById('cst-clock').innerHTML = `<i class="fa-regular fa-clock"></i> ${cstTime} CST`;
-        renderDashboard();
     }
 </script>
 </body>
