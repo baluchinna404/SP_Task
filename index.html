@@ -284,7 +284,7 @@
     const SUPABASE_URL = "https://txrkkqcnofobcprftzuc.supabase.co/rest/v1/";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4cmtrcWNub2ZvYmNwcmZ0enVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NTg2MDEsImV4cCI6MjEwNTMzNDYwMX0.yqkV64FwroHOaucpj2sIPPaeAAF1KulFhUEYAQ1SqYo";
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let supabase = null;
 
     const taskScheduleTemplate = [
         { time: "04:00 AM CST", hour: 4, type: "Morning Baseline", focus: "Startup Queue, DB & Memory Heap", slotIndex: 0 },
@@ -301,8 +301,8 @@
     let teamRoster = ["Resource 1", "Resource 2", "Resource 3", "Resource 4", "Resource 5", "Resource 6", "Resource 7"];
     let selectedDate = new Date().toISOString().split('T')[0];
     let currentDateConfig = null;
-
     let isConfigExpanded = false;
+
     function toggleConfigPanel() {
         isConfigExpanded = !isConfigExpanded;
         const body = document.getElementById('config-content-body');
@@ -323,15 +323,42 @@
         }
     }
 
-    // Initialize & Listen to Supabase DB
+    document.addEventListener('DOMContentLoaded', () => {
+        try {
+            if (typeof window.supabase === 'undefined') {
+                alert("Error: Supabase JS library failed to load. Check internet connection.");
+                return;
+            }
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            document.getElementById('select-date').value = selectedDate;
+            initSupabase();
+            setInterval(updateClock, 60000);
+            updateClock();
+        } catch (err) {
+            console.error("Initialization failure:", err);
+            document.getElementById('sync-status').innerText = "Sync Failed";
+            document.getElementById('sync-status').style.background = "#fee2e2";
+            document.getElementById('sync-status').style.color = "#dc2626";
+        }
+    });
+
     async function initSupabase() {
-        await fetchRoster();
-        await fetchDateConfig(selectedDate);
-        subscribeRealtime();
+        try {
+            await fetchRoster();
+            await fetchDateConfig(selectedDate);
+            subscribeRealtime();
+            document.getElementById('sync-status').innerHTML = `<i class="fa-solid fa-cloud"></i> Supabase Live`;
+        } catch (err) {
+            console.error("Database connection error:", err);
+            document.getElementById('sync-status').innerText = "DB Error";
+            document.getElementById('sync-status').style.background = "#fee2e2";
+            document.getElementById('sync-status').style.color = "#dc2626";
+        }
     }
 
     async function fetchRoster() {
-        const { data } = await supabase.from('team_roster').select('*').eq('id', 1).single();
+        const { data, error } = await supabase.from('team_roster').select('*').eq('id', 1).maybeSingle();
+        if (error) console.error("Roster error:", error);
         if (data && data.names) {
             teamRoster = data.names;
         } else {
@@ -340,7 +367,8 @@
     }
 
     async function fetchDateConfig(dateStr) {
-        const { data } = await supabase.from('tracker_configs').select('*').eq('date_key', dateStr).single();
+        const { data, error } = await supabase.from('tracker_configs').select('*').eq('date_key', dateStr).maybeSingle();
+        if (error) console.error("Config fetch error:", error);
         if (data) {
             currentDateConfig = data;
         } else {
@@ -529,12 +557,6 @@
         document.getElementById('cst-clock').innerHTML = `<i class="fa-regular fa-clock"></i> ${cstTime} CST`;
         renderDashboard();
     }
-
-    setInterval(updateClock, 60000);
-    updateClock();
-
-    document.getElementById('select-date').value = selectedDate;
-    initSupabase();
 </script>
 </body>
 </html>
