@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SailPoint IIQ Operational Health Dashboard</title>
+    <!-- FontAwesome, Google Fonts & Supabase JS SDK -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --bg-light: #f0f4f8;
+            --card-bg: #ffffff;
+            --card-border: #e2e8f0;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --accent-blue: #0284c7;
+            --accent-light-blue: #e0f2fe;
+            --accent-green: #16a34a;
+            --accent-light-green: #dcfce7;
+            --accent-amber: #d97706;
+            --accent-light-amber: #fef3c7;
+            --accent-red: #dc2626;
+            --accent-light-red: #fee2e2;
+            --accent-purple: #9333ea;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background: var(--bg-light); color: var(--text-primary); min-height: 100vh; padding: 24px; }
+        .container { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+        /* Header */
+        header {
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            padding: 18px 28px; border-radius: 16px; box-shadow: var(--shadow-md);
+        }
+        .brand { display: flex; align-items: center; gap: 16px; }
+        .brand-icon { font-size: 32px; color: var(--accent-blue); }
+        .header-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        
+        .date-picker-container {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--accent-light-blue); border: 1px solid #bae6fd;
+            padding: 8px 14px; border-radius: 12px;
+        }
+        .date-input {
+            background: transparent; border: none; color: var(--text-primary);
+            font-size: 0.95rem; font-weight: 600; outline: none; cursor: pointer;
+        }
+
+        .sync-badge {
+            background: var(--accent-light-green); color: var(--accent-green);
+            padding: 8px 16px; border-radius: 20px; border: 1px solid #bbf7d0;
+            font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 8px;
+        }
+
+        /* KPI Cards */
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+        .kpi-card {
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            border-radius: 16px; padding: 18px; display: flex; align-items: center; gap: 16px;
+            box-shadow: var(--shadow-sm); transition: transform 0.2s;
+        }
+        .kpi-card:hover { transform: translateY(-3px); }
+        .kpi-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .kpi-data h3 { font-size: 1.65rem; font-weight: 700; color: var(--text-primary); }
+        .kpi-data p { color: var(--text-secondary); font-size: 0.82rem; }
+
+        /* Collapsible Configurator Panel */
+        .config-section {
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            border-radius: 16px; box-shadow: var(--shadow-sm); overflow: hidden;
+        }
+        .config-toggle-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 24px; cursor: pointer; background: #ffffff; user-select: none;
+        }
+        .config-toggle-header:hover { background: #f8fafc; }
+        .config-toggle-header.active { border-bottom: 1px solid var(--card-border); background: #f8fafc; }
+
+        .config-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 10px; }
+        .config-content { display: none; padding: 20px 24px; flex-direction: column; gap: 16px; }
+        .config-content.show { display: flex; }
+
+        .roster-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .roster-field { display: flex; flex-direction: column; gap: 4px; }
+        .roster-field label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
+        .roster-field input {
+            padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border);
+            font-size: 0.88rem; font-weight: 500; color: var(--text-primary); background: #ffffff; outline: none;
+        }
+
+        .shift-selection-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;
+            background: #f8fafc; border: 1px solid var(--card-border); padding: 16px; border-radius: 12px;
+        }
+        .shift-select-group { display: flex; flex-direction: column; gap: 6px; }
+        .shift-select-group label { font-size: 0.82rem; font-weight: 600; color: var(--accent-blue); }
+        .shift-dropdown {
+            padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; font-weight: 600;
+            border: 1px solid var(--card-border); background: #ffffff; color: var(--text-primary); outline: none; cursor: pointer;
+        }
+
+        .btn-action {
+            background: var(--accent-blue); color: #ffffff; border: none; padding: 8px 18px;
+            border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 8px;
+        }
+        .btn-action:hover { opacity: 0.9; }
+
+        /* Main Schedule Grid */
+        .main-grid { display: grid; grid-template-columns: 2.3fr 1fr; gap: 20px; }
+        @media (max-width: 1100px) { .main-grid { grid-template-columns: 1fr; } }
+
+        .panel {
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            border-radius: 16px; padding: 22px; box-shadow: var(--shadow-sm);
+        }
+        .panel-title { font-size: 1.05rem; font-weight: 600; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { padding: 12px 14px; color: var(--text-secondary); font-weight: 600; font-size: 0.82rem; border-bottom: 2px solid var(--card-border); text-transform: uppercase; background: #f8fafc; }
+        td { padding: 12px 14px; border-bottom: 1px solid var(--card-border); font-size: 0.88rem; color: var(--text-primary); }
+        
+        .assigned-badge {
+            display: inline-block; padding: 4px 10px; border-radius: 6px;
+            background: var(--accent-light-blue); color: var(--accent-blue); font-weight: 600; font-size: 0.85rem;
+        }
+
+        .overdue-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: var(--accent-light-red); color: var(--accent-red);
+            border: 1px solid #fca5a5; padding: 3px 8px; border-radius: 6px;
+            font-size: 0.72rem; font-weight: 700; text-transform: uppercase; margin-left: 8px;
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        .status-select {
+            padding: 6px 10px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+            border: 1px solid var(--card-border); background: #ffffff; cursor: pointer; outline: none;
+        }
+        .status-select.Pass { color: var(--accent-green); border-color: #86efac; background: var(--accent-light-green); }
+        .status-select.Fail { color: var(--accent-red); border-color: #fca5a5; background: var(--accent-light-red); }
+        .status-select.Pending { color: var(--accent-amber); border-color: #fde047; background: var(--accent-light-amber); }
+
+        .notes-input {
+            width: 100%; background: #ffffff; border: 1px solid var(--card-border);
+            color: var(--text-primary); padding: 6px 10px; border-radius: 8px; font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <header>
+        <div class="brand">
+            <i class="fa-solid fa-server brand-icon"></i>
+            <div>
+                <h2>SailPoint IIQ Operational Dashboard</h2>
+                <p style="color: var(--text-secondary); font-size: 0.85rem;">Live Shared Monitoring (Supabase Database Sync)</p>
+            </div>
+        </div>
+        <div class="header-controls">
+            <div class="date-picker-container">
+                <i class="fa-regular fa-calendar-days" style="color: var(--accent-blue); font-size: 1.1rem;"></i>
+                <input type="date" id="select-date" class="date-input" onchange="onDateChange(this.value)">
+            </div>
+            <div class="sync-badge" id="sync-status"><i class="fa-solid fa-cloud"></i> Supabase Live</div>
+            <div style="color: var(--accent-blue); font-weight: 600;" id="cst-clock"><i class="fa-regular fa-clock"></i> --:-- CST</div>
+        </div>
+    </header>
+
+    <!-- Collapsible Shift Assignment Configurator -->
+    <div class="config-section">
+        <div class="config-toggle-header" id="config-toggle-btn" onclick="toggleConfigPanel()">
+            <div class="config-title">
+                <i class="fa-solid fa-sliders" style="color: var(--accent-blue);"></i>
+                Shift Assignment Configurator (7 Total Resources → 5 Shift Slots)
+            </div>
+            <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+                <span id="toggle-label-text">Expand Options</span>
+                <i class="fa-solid fa-chevron-down" id="toggle-chevron"></i>
+            </div>
+        </div>
+
+        <div class="config-content" id="config-content-body">
+            <div>
+                <p style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:8px;"><strong>Step 1:</strong> Define Team Resource Pool Names (7 Members):</p>
+                <div class="roster-grid" id="roster-inputs-container"></div>
+            </div>
+
+            <div>
+                <p style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:8px;"><strong>Step 2:</strong> Select Which 5 Resources Work Today's Active Shifts (Remaining 2 Auto-Set to Standby):</p>
+                <div class="shift-selection-grid">
+                    <div class="shift-select-group"><label>Shift 1: Morning Lead (4 AM - 12 PM)</label><select id="shift-slot-0" class="shift-dropdown"></select></div>
+                    <div class="shift-select-group"><label>Shift 2: Morning Support (4 AM - 12 PM)</label><select id="shift-slot-1" class="shift-dropdown"></select></div>
+                    <div class="shift-select-group"><label>Shift 3: Mid-Day Hand-off (10 AM - 4 PM)</label><select id="shift-slot-2" class="shift-dropdown"></select></div>
+                    <div class="shift-select-group"><label>Shift 4: Evening Lead (12 PM - 8 PM)</label><select id="shift-slot-3" class="shift-dropdown"></select></div>
+                    <div class="shift-select-group"><label>Shift 5: Evening Support (12 PM - 8 PM)</label><select id="shift-slot-4" class="shift-dropdown"></select></div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+                <button class="btn-action" onclick="saveShiftAssignments()"><i class="fa-solid fa-floppy-disk"></i> Apply Shift Schedule</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI Metrics -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: var(--accent-light-green); color: var(--accent-green);"><i class="fa-solid fa-circle-check"></i></div>
+            <div class="kpi-data"><h3 id="kpi-pass">0 / 9</h3><p>Passed Checks</p></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: var(--accent-light-red); color: var(--accent-red);"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="kpi-data"><h3 id="kpi-fail">0</h3><p>Open Incidents</p></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: var(--accent-light-amber); color: var(--accent-amber);"><i class="fa-solid fa-hourglass-half"></i></div>
+            <div class="kpi-data"><h3 id="kpi-pending">9</h3><p>Pending Checks</p></div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon" style="background: var(--accent-light-purple); color: var(--accent-purple);"><i class="fa-solid fa-user-clock"></i></div>
+            <div class="kpi-data"><h3 id="standby-display">2 On Standby</h3><p id="active-day-display">Selected Date</p></div>
+        </div>
+    </div>
+
+    <!-- Main Schedule Grid -->
+    <div class="main-grid">
+        <div class="panel">
+            <div class="panel-title">
+                <i class="fa-solid fa-list-check" style="color: var(--accent-blue);"></i>
+                Daily Operations Schedule (<span id="display-selected-date" style="color: var(--accent-blue);">--</span>)
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time Slot (CST)</th>
+                            <th>Check Type</th>
+                            <th>IIQ Focus Area</th>
+                            <th>Assigned Resource</th>
+                            <th>Status</th>
+                            <th>Notes / Incident #</th>
+                        </tr>
+                    </thead>
+                    <tbody id="schedule-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">
+                <i class="fa-solid fa-user-shield" style="color: var(--accent-purple);"></i>
+                Daily Resource Summary
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Shift Role</th>
+                            <th>Assigned Resource</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summary-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // -------------------------------------------------------------
+    // REPLACE WITH YOUR SUPABASE PROJECT CREDENTIALS FROM STEP 1
+    // -------------------------------------------------------------
+    const SUPABASE_URL = "https://txrkkqcnofobcprftzuc.supabase.co/rest/v1/";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4cmtrcWNub2ZvYmNwcmZ0enVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NTg2MDEsImV4cCI6MjEwNTMzNDYwMX0.yqkV64FwroHOaucpj2sIPPaeAAF1KulFhUEYAQ1SqYo";
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const taskScheduleTemplate = [
+        { time: "04:00 AM CST", hour: 4, type: "Morning Baseline", focus: "Startup Queue, DB & Memory Heap", slotIndex: 0 },
+        { time: "06:00 AM CST", hour: 6, type: "2-Hour Check", focus: "Batch Aggregations, IQService", slotIndex: 0 },
+        { time: "08:00 AM CST", hour: 8, type: "2-Hour Check", focus: "Peak Login, Active Workflows", slotIndex: 1 },
+        { time: "10:00 AM CST", hour: 10, type: "2-Hour Check", focus: "Identity Refresh & Provisioning", slotIndex: 1 },
+        { time: "12:00 PM CST", hour: 12, type: "Mid-Day Review", focus: "Workday/SAP Connectors, Hand-off", slotIndex: 2 },
+        { time: "02:00 PM CST", hour: 14, type: "2-Hour Check", focus: "DB Connection Pool, Certifications", slotIndex: 3 },
+        { time: "04:00 PM CST", hour: 16, type: "2-Hour Check", focus: "Failed Tasks, Connector Latency", slotIndex: 3 },
+        { time: "06:00 PM CST", hour: 18, type: "2-Hour Check", focus: "Closing Stats, Provisioning Retries", slotIndex: 4 },
+        { time: "08:00 PM CST", hour: 20, type: "Evening Wrap-Up", focus: "Nightly Batch Prep, DB Index Check", slotIndex: 4 }
+    ];
+
+    let teamRoster = ["Resource 1", "Resource 2", "Resource 3", "Resource 4", "Resource 5", "Resource 6", "Resource 7"];
+    let selectedDate = new Date().toISOString().split('T')[0];
+    let currentDateConfig = null;
+
+    let isConfigExpanded = false;
+    function toggleConfigPanel() {
+        isConfigExpanded = !isConfigExpanded;
+        const body = document.getElementById('config-content-body');
+        const header = document.getElementById('config-toggle-btn');
+        const chevron = document.getElementById('toggle-chevron');
+        const label = document.getElementById('toggle-label-text');
+
+        if (isConfigExpanded) {
+            body.classList.add('show');
+            header.classList.add('active');
+            chevron.className = 'fa-solid fa-chevron-up';
+            label.innerText = 'Collapse Options';
+        } else {
+            body.classList.remove('show');
+            header.classList.remove('active');
+            chevron.className = 'fa-solid fa-chevron-down';
+            label.innerText = 'Expand Options';
+        }
+    }
+
+    // Initialize & Listen to Supabase DB
+    async function initSupabase() {
+        await fetchRoster();
+        await fetchDateConfig(selectedDate);
+        subscribeRealtime();
+    }
+
+    async function fetchRoster() {
+        const { data } = await supabase.from('team_roster').select('*').eq('id', 1).single();
+        if (data && data.names) {
+            teamRoster = data.names;
+        } else {
+            await supabase.from('team_roster').upsert({ id: 1, names: teamRoster });
+        }
+    }
+
+    async function fetchDateConfig(dateStr) {
+        const { data } = await supabase.from('tracker_configs').select('*').eq('date_key', dateStr).single();
+        if (data) {
+            currentDateConfig = data;
+        } else {
+            currentDateConfig = {
+                date_key: dateStr,
+                shift_assignments: [teamRoster[0], teamRoster[1], teamRoster[2], teamRoster[3], teamRoster[4]],
+                statuses: Array(9).fill("Pending"),
+                notes: Array(9).fill("")
+            };
+            await supabase.from('tracker_configs').upsert(currentDateConfig);
+        }
+        renderDashboard();
+    }
+
+    function subscribeRealtime() {
+        supabase.channel('public-tracker-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tracker_configs' }, payload => {
+                if (payload.new && payload.new.date_key === selectedDate) {
+                    currentDateConfig = payload.new;
+                    renderDashboard();
+                }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'team_roster' }, payload => {
+                if (payload.new && payload.new.names) {
+                    teamRoster = payload.new.names;
+                    renderDashboard();
+                }
+            })
+            .subscribe();
+    }
+
+    function renderRosterFields() {
+        const container = document.getElementById('roster-inputs-container');
+        container.innerHTML = '';
+        teamRoster.forEach((name, i) => {
+            const div = document.createElement('div');
+            div.className = 'roster-field';
+            div.innerHTML = `
+                <label>Team Member ${i+1}</label>
+                <input type="text" id="roster-input-${i}" value="${name}" onchange="onRosterNameChange(${i}, this.value)">
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    async function onRosterNameChange(index, newName) {
+        if (!newName.trim()) return;
+        teamRoster[index] = newName.trim();
+        await supabase.from('team_roster').upsert({ id: 1, names: teamRoster });
+        populateShiftDropdowns();
+    }
+
+    function populateShiftDropdowns() {
+        if (!currentDateConfig) return;
+        for (let s = 0; s < 5; s++) {
+            const select = document.getElementById(`shift-slot-${s}`);
+            const currentSelected = currentDateConfig.shift_assignments[s];
+            select.innerHTML = teamRoster.map(r => 
+                `<option value="${r}" ${r === currentSelected ? 'selected' : ''}>${r}</option>`
+            ).join('');
+        }
+    }
+
+    async function saveShiftAssignments() {
+        if (!currentDateConfig) return;
+        for (let s = 0; s < 5; s++) {
+            currentDateConfig.shift_assignments[s] = document.getElementById(`shift-slot-${s}`).value;
+        }
+        await supabase.from('tracker_configs').upsert(currentDateConfig);
+        renderDashboard();
+    }
+
+    function onDateChange(newDate) {
+        selectedDate = newDate;
+        fetchDateConfig(selectedDate);
+    }
+
+    function getCSTDateDetails() {
+        const now = new Date();
+        const cstStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+        const cstHour = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(now), 10);
+        return { cstDateStr: cstStr, cstHour: cstHour };
+    }
+
+    function renderDashboard() {
+        if (!currentDateConfig) return;
+
+        document.getElementById('display-selected-date').innerText = selectedDate;
+        renderRosterFields();
+        populateShiftDropdowns();
+
+        const shiftAssignments = currentDateConfig.shift_assignments;
+        const activeSet = new Set(shiftAssignments);
+        const standbyList = teamRoster.filter(r => !activeSet.has(r));
+
+        document.getElementById('standby-display').innerText = `${standbyList.length} On Standby`;
+        document.getElementById('active-day-display').innerText = `Date: ${selectedDate}`;
+
+        const { cstDateStr, cstHour } = getCSTDateDetails();
+
+        const tbody = document.getElementById('schedule-body');
+        tbody.innerHTML = '';
+
+        let passCount = 0, failCount = 0, pendingCount = 0;
+
+        taskScheduleTemplate.forEach((t, i) => {
+            const assignedResource = shiftAssignments[t.slotIndex];
+            const currentStatus = currentDateConfig.statuses[i] || "Pending";
+            const currentNote = currentDateConfig.notes[i] || "";
+
+            if (currentStatus === 'Pass') passCount++;
+            else if (currentStatus === 'Fail') failCount++;
+            else pendingCount++;
+
+            let isOverdue = false;
+            if (currentStatus === "Pending") {
+                if (selectedDate < cstDateStr) {
+                    isOverdue = true;
+                } else if (selectedDate === cstDateStr && cstHour >= t.hour) {
+                    isOverdue = true;
+                }
+            }
+
+            const overdueBadge = isOverdue ? `<span class="overdue-badge"><i class="fa-solid fa-clock-rotate-left"></i> Overdue</span>` : '';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${t.time}</strong> ${overdueBadge}</td>
+                <td><span style="color:var(--text-secondary); font-size:0.85rem;">${t.type}</span></td>
+                <td>${t.focus}</td>
+                <td><span class="assigned-badge">${assignedResource}</span></td>
+                <td>
+                    <select class="status-select ${currentStatus}" onchange="updateTaskStatus(${i}, this.value)">
+                        <option value="Pending" ${currentStatus === 'Pending' ? 'selected' : ''}>Pending</option>
+                        <option value="Pass" ${currentStatus === 'Pass' ? 'selected' : ''}>Pass</option>
+                        <option value="Fail" ${currentStatus === 'Fail' ? 'selected' : ''}>Fail / Issue</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="text" class="notes-input" placeholder="Add incident or notes..." value="${currentNote}" onblur="updateTaskNote(${i}, this.value)">
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('kpi-pass').innerText = `${passCount} / ${taskScheduleTemplate.length}`;
+        document.getElementById('kpi-fail').innerText = failCount;
+        document.getElementById('kpi-pending').innerText = pendingCount;
+
+        const summaryBody = document.getElementById('summary-body');
+        const roles = [
+            "Morning Lead (4 AM - 12 PM)",
+            "Morning Support (4 AM - 12 PM)",
+            "Mid-Day Hand-off (10 AM - 4 PM)",
+            "Evening Lead (12 PM - 8 PM)",
+            "Evening Support (12 PM - 8 PM)"
+        ];
+
+        summaryBody.innerHTML = roles.map((role, idx) => `
+            <tr>
+                <td>${role}</td>
+                <td><strong style="color:var(--accent-blue);">${shiftAssignments[idx]}</strong></td>
+            </tr>
+        `).join('') + `
+            <tr style="background:#f8fafc;">
+                <td><strong>Standby / Off Shift</strong></td>
+                <td><span style="color:var(--text-secondary);">${standbyList.join(', ') || 'None'}</span></td>
+            </tr>
+        `;
+    }
+
+    async function updateTaskStatus(index, val) {
+        currentDateConfig.statuses[index] = val;
+        await supabase.from('tracker_configs').upsert(currentDateConfig);
+        renderDashboard();
+    }
+
+    async function updateTaskNote(index, val) {
+        currentDateConfig.notes[index] = val;
+        await supabase.from('tracker_configs').upsert(currentDateConfig);
+    }
+
+    function updateClock() {
+        const options = { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
+        const cstTime = new Intl.DateTimeFormat('en-US', options).format(new Date());
+        document.getElementById('cst-clock').innerHTML = `<i class="fa-regular fa-clock"></i> ${cstTime} CST`;
+        renderDashboard();
+    }
+
+    setInterval(updateClock, 60000);
+    updateClock();
+
+    document.getElementById('select-date').value = selectedDate;
+    initSupabase();
+</script>
+</body>
+</html>
